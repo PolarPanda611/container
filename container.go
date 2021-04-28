@@ -89,3 +89,7 @@ func (s *Container) InstanceMapping() map[string]reflect.Type {
 	}
 	return instanceMap
 }
+
+func (s *Container) GetInstance(instanceType reflect.Type, injectingMap map[reflect.Type]interface{}) (interface{}, map[reflect.Type]interface{}, map[reflect.Type]interface{}) {
+	return nil, nil, nil
+}

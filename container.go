@@ -1,7 +1,10 @@
 package container
 
 import (
+	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -13,7 +16,7 @@ type Config struct {
 var (
 	DefaultConfig = &Config{
 		AutoFree:  true,
-		AutoWired: true,
+		AutoWired: false,
 	}
 )
 
@@ -53,6 +56,9 @@ func (s *Container) NewInstance(instanceType reflect.Type, instancePool *sync.Po
 	s.instanceTypeList = append(s.instanceTypeList, instanceType)
 	if len(instanceTag) > 0 {
 		if instanceTag[0] != "" {
+			if _, ok := s.poolTags[instanceTag[0]]; ok {
+				panic(fmt.Errorf("tag %v already existed", instanceTag[0]))
+			}
 			s.poolTags[instanceTag[0]] = instanceType
 		}
 	}
@@ -90,6 +96,95 @@ func (s *Container) InstanceMapping() map[string]reflect.Type {
 	return instanceMap
 }
 
+// InstanceDISelfCheck  self check di request registered func exist or not
+func (s *Container) InstanceDISelfCheck() {
+	for _, v := range s.instanceTypeList {
+		s.DiSelfCheck(v)
+	}
+	return
+
+}
+
 func (s *Container) GetInstance(instanceType reflect.Type, injectingMap map[reflect.Type]interface{}) (interface{}, map[reflect.Type]interface{}, map[reflect.Type]interface{}) {
-	return nil, nil, nil
+	if v, ok := injectingMap[instanceType]; ok {
+		return v, nil, nil
+	}
+	pool, ok := s.poolMap[instanceType]
+	if !ok {
+		panic("unknown service name")
+	}
+	service := pool.Get()
+	injectingMap[instanceType] = service
+	sharedInstance, toFreeInstance := s.DiAllFields(service, injectingMap)
+	return service, sharedInstance, toFreeInstance
+}
+
+func (s *Container) Release(instance interface{}) {
+	t := reflect.TypeOf(instance)
+	syncpool, ok := s.poolMap[t]
+	if !ok {
+		return
+	}
+	s.DiFree(instance)
+	syncpool.Put(instance)
+}
+func (s *Container) getResourceTag(obj interface{}, index int) string {
+	v, exist := getTagByName(obj, index, CONTAINER)
+	if exist {
+		resourceValue, ok := decodeTag(v, RESOURCE)
+		if ok {
+			return resourceValue
+		}
+	}
+	return ""
+}
+func (s *Container) getAutoWireTag(obj interface{}, index int) bool {
+	v, exist := getTagByName(obj, index, CONTAINER)
+	if exist {
+		autoWireOption, ok := decodeTag(v, AUTOWIRE)
+		if ok {
+			if autoWireOption == "" {
+				return true
+			}
+			b, _ := strconv.ParseBool(autoWireOption)
+			return b
+		}
+	}
+	return s.c.AutoWired
+}
+
+func (s *Container) getAutoFreeTag(obj interface{}, index int) bool {
+	v, exist := getTagByName(obj, index, CONTAINER)
+	if exist {
+		autoFreeOption, ok := decodeTag(v, AUTOFREE)
+		if ok {
+			if autoFreeOption == "" {
+				return true
+			}
+			b, _ := strconv.ParseBool(autoFreeOption)
+			return b
+		}
+	}
+	return s.c.AutoFree
+}
+
+func decodeTag(value string, key Keyword) (string, bool) {
+	kvStr := strings.Split(strings.Trim(value, ";"), TAG_SPLITER)
+	t := make(map[string]string)
+	for _, v := range kvStr {
+		if v == "" {
+			continue
+		}
+		index := strings.Index(v, string(TAG_KV_SPLITER))
+		if index == 0 {
+			continue
+		} else if index >= 0 {
+			t[v[:index]] = v[index+1:]
+		} else {
+			t[v] = ""
+		}
+
+	}
+	v, ok := t[string(key)]
+	return v, ok
 }

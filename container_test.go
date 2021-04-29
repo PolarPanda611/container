@@ -71,9 +71,10 @@ func TestContainer_NewInstance(t *testing.T) {
 		instanceTag  []string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
+		name      string
+		fields    fields
+		args      args
+		wantPanic bool
 	}{
 		// TODO: Add test cases.
 		{
@@ -93,6 +94,7 @@ func TestContainer_NewInstance(t *testing.T) {
 				instancePool: &sync.Pool{New: func() interface{} { return &test1{} }},
 				instanceTag:  []string{"test1"},
 			},
+			wantPanic: false,
 		},
 		{
 			name: "2",
@@ -107,6 +109,26 @@ func TestContainer_NewInstance(t *testing.T) {
 				instancePool: pool1,
 				instanceTag:  []string{"test1"},
 			},
+			wantPanic: false,
+		},
+		{
+			name: "3",
+			fields: fields{
+				poolMap: map[reflect.Type]*sync.Pool{
+					reflect.TypeOf(&test1{}): pool1,
+				},
+				instanceTypeList: []reflect.Type{reflect.TypeOf(&test1{})},
+				poolTags: map[string]reflect.Type{
+					"test1": reflect.TypeOf(&test1{}),
+				},
+				instanceMapping: map[string]reflect.Type{},
+			},
+			args: args{
+				instanceType: reflect.TypeOf(&test2{}),
+				instancePool: &sync.Pool{New: func() interface{} { return &test1{} }},
+				instanceTag:  []string{"test1"},
+			},
+			wantPanic: true,
 		},
 	}
 	for _, tt := range tests {
@@ -117,17 +139,22 @@ func TestContainer_NewInstance(t *testing.T) {
 				poolTags:         tt.fields.poolTags,
 				instanceMapping:  tt.fields.instanceMapping,
 			}
-			s.NewInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...)
-			assert.Equal(t, &Container{
-				poolMap: map[reflect.Type]*sync.Pool{
-					reflect.TypeOf(&test1{}): pool1,
-				},
-				instanceTypeList: []reflect.Type{reflect.TypeOf(&test1{})},
-				poolTags: map[string]reflect.Type{
-					"test1": reflect.TypeOf(&test1{}),
-				},
-				instanceMapping: map[string]reflect.Type{},
-			}, s, "instance not register correctly")
+			if tt.wantPanic {
+				assert.PanicsWithError(t, "tag test1 already existed", func() { s.NewInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...) })
+			} else {
+				s.NewInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...)
+				assert.Equal(t, &Container{
+					poolMap: map[reflect.Type]*sync.Pool{
+						reflect.TypeOf(&test1{}): pool1,
+					},
+					instanceTypeList: []reflect.Type{reflect.TypeOf(&test1{})},
+					poolTags: map[string]reflect.Type{
+						"test1": reflect.TypeOf(&test1{}),
+					},
+					instanceMapping: map[string]reflect.Type{},
+				}, s, "instance not register correctly")
+			}
+
 		})
 	}
 }
@@ -228,6 +255,260 @@ func TestContainer_CheckInstanceNameIfExist(t *testing.T) {
 			}
 			if got := s.CheckInstanceNameIfExist(tt.args.instanceName); got != tt.want {
 				t.Errorf("Container.CheckInstanceNameIfExist() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainer_getAutoWireTag(t *testing.T) {
+	type test3 struct {
+		test1 string `container:"autowire:true"`
+		test2 string `container:"autowire:false"`
+		test3 string `container:"autowire"`
+		test4 string `container:""`
+	}
+	type args struct {
+		obj   interface{}
+		index int
+	}
+	tests := []struct {
+		name   string
+		fields *Container
+		args   args
+		want   bool
+	}{
+		{
+			name:   "1",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 0,
+			},
+			want: true,
+		},
+		{
+			name:   "2",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 1,
+			},
+			want: false,
+		},
+		{
+			name:   "3",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 2,
+			},
+			want: true,
+		},
+		{
+			name:   "4",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 3,
+			},
+			want: false,
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.fields.getAutoWireTag(tt.args.obj, tt.args.index); got != tt.want {
+				t.Errorf("Container.getAutoWireTag() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainer_getResourceTag(t *testing.T) {
+	type test3 struct {
+		test1 string `container:"resource:1234"`
+		test2 string `container:"resource:asdf"`
+		test3 string `container:"resource:12fs"`
+		test4 string `container:"resource:213"`
+	}
+	type args struct {
+		obj   interface{}
+		index int
+	}
+	tests := []struct {
+		name   string
+		fields *Container
+		args   args
+		want   string
+	}{
+		{
+			name:   "1",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 0,
+			},
+			want: "1234",
+		},
+		{
+			name:   "2",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 1,
+			},
+			want: "asdf",
+		},
+		{
+			name:   "3",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 2,
+			},
+			want: "12fs",
+		},
+		{
+			name:   "4",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 3,
+			},
+			want: "213",
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.fields.getResourceTag(tt.args.obj, tt.args.index); got != tt.want {
+				t.Errorf("Container.getAutoFreeTag() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainer_getAutoFreeTag(t *testing.T) {
+	type test3 struct {
+		test1 string `container:"autofree:true"`
+		test2 string `container:"autofree:false"`
+		test3 string `container:"autofree"`
+		test4 string `container:""`
+	}
+	type args struct {
+		obj   interface{}
+		index int
+	}
+	tests := []struct {
+		name   string
+		fields *Container
+		args   args
+		want   bool
+	}{
+		{
+			name:   "1",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 0,
+			},
+			want: true,
+		},
+		{
+			name:   "2",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 1,
+			},
+			want: false,
+		},
+		{
+			name:   "3",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 2,
+			},
+			want: true,
+		},
+		{
+			name:   "4",
+			fields: NewContainer(),
+			args: args{
+				obj:   &test3{},
+				index: 3,
+			},
+			want: true,
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.fields.getAutoFreeTag(tt.args.obj, tt.args.index); got != tt.want {
+				t.Errorf("Container.getAutoFreeTag() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_decodeTag(t *testing.T) {
+	type args struct {
+		value string
+		key   Keyword
+	}
+	tests := []struct {
+		name     string
+		args     args
+		want     string
+		wantBool bool
+	}{
+		{
+			name: "1",
+			args: args{
+				value: "autofree:true",
+				key:   AUTOFREE,
+			},
+			want:     "true",
+			wantBool: true,
+		},
+		{
+			name: "2",
+			args: args{
+				value: "autofree:true;autofree:false;",
+				key:   AUTOFREE,
+			},
+			want:     "false",
+			wantBool: true,
+		},
+		{
+			name: "3",
+			args: args{
+				value: "autofree;",
+				key:   AUTOFREE,
+			},
+			want:     "",
+			wantBool: true,
+		},
+		{
+			name: "4",
+			args: args{
+				value: ":;",
+				key:   AUTOFREE,
+			},
+			want:     "",
+			wantBool: false,
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := decodeTag(tt.args.value, tt.args.key)
+			if got != tt.want {
+				t.Errorf("decodeTag() value = %v, want %v", got, tt.want)
+			}
+			if ok != tt.wantBool {
+				t.Errorf("decodeTag() isExist= %v, want %v", ok, tt.wantBool)
 			}
 		})
 	}

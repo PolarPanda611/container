@@ -57,7 +57,7 @@ func TestNewContainer(t *testing.T) {
 	}
 }
 
-func TestContainer_NewInstance(t *testing.T) {
+func TestContainer_newInstance(t *testing.T) {
 
 	type fields struct {
 		poolMap          map[reflect.Type]*sync.Pool
@@ -140,9 +140,9 @@ func TestContainer_NewInstance(t *testing.T) {
 				instanceMapping:  tt.fields.instanceMapping,
 			}
 			if tt.wantPanic {
-				assert.PanicsWithError(t, "tag test1 already existed", func() { s.NewInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...) })
+				assert.PanicsWithError(t, "tag test1 already existed", func() { s.newInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...) })
 			} else {
-				s.NewInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...)
+				s.newInstance(tt.args.instanceType, tt.args.instancePool, tt.args.instanceTag...)
 				assert.Equal(t, &Container{
 					poolMap: map[reflect.Type]*sync.Pool{
 						reflect.TypeOf(&test1{}): pool1,
@@ -161,10 +161,10 @@ func TestContainer_NewInstance(t *testing.T) {
 
 func TestContainer_GetInstanceTypeByTag(t *testing.T) {
 	p1 := NewContainer()
-	p1.NewInstance(reflect.TypeOf(&test1{}), pool1, "test1")
-	p1.NewInstance(reflect.TypeOf(&test1{}), pool1, "test2")
-	p1.NewInstance(reflect.TypeOf(&test2{}), pool2, "test3")
-	p1.NewInstance(reflect.TypeOf(&test2{}), pool2, "test4")
+	p1.newInstance(reflect.TypeOf(&test1{}), pool1, "test1")
+	p1.newInstance(reflect.TypeOf(&test1{}), pool1, "test2")
+	p1.newInstance(reflect.TypeOf(&test2{}), pool2, "test3")
+	p1.newInstance(reflect.TypeOf(&test2{}), pool2, "test4")
 	type fields struct {
 		poolMap          map[reflect.Type]*sync.Pool
 		instanceTypeList []reflect.Type
@@ -217,7 +217,7 @@ func TestContainer_GetInstanceTypeByTag(t *testing.T) {
 
 func TestContainer_CheckInstanceNameIfExist(t *testing.T) {
 	p1 := NewContainer()
-	p1.NewInstance(reflect.TypeOf(&test1{}), pool1, "test1")
+	p1.newInstance(reflect.TypeOf(&test1{}), pool1, "test1")
 	type args struct {
 		instanceName reflect.Type
 	}
@@ -510,6 +510,97 @@ func Test_decodeTag(t *testing.T) {
 			if ok != tt.wantBool {
 				t.Errorf("decodeTag() isExist= %v, want %v", ok, tt.wantBool)
 			}
+		})
+	}
+}
+
+func TestContainer_RegisterInstance(t *testing.T) {
+	type fields struct {
+		c *Container
+	}
+	type args struct {
+		instance    interface{}
+		instanceTag []string
+	}
+	type want struct {
+		typeList []reflect.Type
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want
+	}{
+		{
+			name: "1",
+			fields: fields{
+				c: NewContainer(Config{
+					AutoFree:  true,
+					AutoWired: false,
+				}),
+			},
+			args: args{
+				instance:    test1{},
+				instanceTag: []string{"test1"},
+			},
+			want: want{
+				typeList: []reflect.Type{reflect.TypeOf(test1{})},
+			},
+		},
+		{
+			name: "2",
+			fields: fields{
+				c: NewContainer(Config{
+					AutoFree:  true,
+					AutoWired: false,
+				}),
+			},
+			args: args{
+				instance:    &test1{},
+				instanceTag: []string{"test1"},
+			},
+			want: want{
+				typeList: []reflect.Type{reflect.TypeOf(test1{})},
+			},
+		},
+		{
+			name: "3",
+			fields: fields{
+				c: NewContainer(Config{
+					AutoFree:  true,
+					AutoWired: false,
+				}),
+			},
+			args: args{
+				instance:    func() interface{} { return test1{} },
+				instanceTag: []string{"test1"},
+			},
+			want: want{
+				typeList: []reflect.Type{reflect.TypeOf(test1{})},
+			},
+		},
+		{
+			name: "4",
+			fields: fields{
+				c: NewContainer(Config{
+					AutoFree:  true,
+					AutoWired: false,
+				}),
+			},
+			args: args{
+				instance:    func() interface{} { return "123" },
+				instanceTag: []string{"test1"},
+			},
+			want: want{
+				typeList: []reflect.Type{reflect.TypeOf("123")},
+			},
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.fields.c.RegisterInstance(tt.args.instance, tt.args.instanceTag...)
+			assert.Equal(t, tt.want.typeList, tt.fields.c.instanceTypeList, "wrong type ")
 		})
 	}
 }

@@ -2,6 +2,7 @@ package container
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -47,8 +48,36 @@ func NewContainer(c ...Config) *Container {
 	return result
 }
 
-// NewInstance add new instance
-func (s *Container) NewInstance(instanceType reflect.Type, instancePool *sync.Pool, instanceTag ...string) {
+// RegisterInstance register new instance
+func (s *Container) RegisterInstance(instance interface{}, instanceTag ...string) {
+	instanceType := reflect.TypeOf(instance)
+	switch instanceType.Kind() {
+	case reflect.Struct:
+		s.newInstance(instanceType, &sync.Pool{
+			New: func() interface{} {
+				return reflect.New(reflect.TypeOf(instance)).Interface()
+			},
+		}, instanceTag...)
+	case reflect.Func:
+		f, ok := instance.(func() interface{})
+		if !ok {
+			log.Fatal("The instance func should be  func () interface{}")
+		}
+		s.newInstance(reflect.TypeOf(f()), &sync.Pool{
+			New: func() interface{} {
+				return f()
+			},
+		}, instanceTag...)
+	case reflect.Ptr:
+		s.RegisterInstance(reflect.Indirect(reflect.ValueOf(instance)).Interface())
+	default:
+		panic("The instance should be struct or func () interface{}")
+	}
+
+}
+
+// newInstance new instance
+func (s *Container) newInstance(instanceType reflect.Type, instancePool *sync.Pool, instanceTag ...string) {
 	if _, ok := s.poolMap[instanceType]; ok {
 		return
 	}
